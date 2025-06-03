@@ -1,6 +1,6 @@
 import asyncio
 from aiogram import Bot, Dispatcher
-from handlers import start, order, profile, payment
+from handlers import start, order, profile, payment, freelancer
 from config import BOT_TOKEN
 
 bot = Bot(token=BOT_TOKEN)
@@ -11,7 +11,7 @@ dp.include_router(start.router)
 dp.include_router(order.router)
 dp.include_router(profile.router)
 dp.include_router(payment.router)
-
+dp.include_router(freelancer.router)
 
 async def main():
     print("Бот запущен...")

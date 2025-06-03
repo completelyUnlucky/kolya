@@ -1,16 +1,20 @@
 from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+
 from db import Session, User, Order
 from config import CHANNEL_ID
 
 router = Router()
 
+# === FSM для создания заказа ===
 class CreateOrderState(StatesGroup):
     text = State()
+    price = State()
 
 
+# === Команда "Создать заказ" ===
 @router.message(F.text == "📦 Создать заказ")
 async def create_order_start(message: Message, state: FSMContext):
     await message.answer("Введите текст вашего заказа:")
@@ -18,17 +22,34 @@ async def create_order_start(message: Message, state: FSMContext):
 
 
 @router.message(CreateOrderState.text)
-async def process_order_text(message: Message, state: FSMContext):
+async def order_text_received(message: Message, state: FSMContext):
+    await state.update_data(text=message.text)
+    await message.answer("Укажите стоимость заказа (в USDT):")
+    await state.set_state(CreateOrderState.price)
+
+
+@router.message(CreateOrderState.price)
+async def order_price_received(message: Message, state: FSMContext):
+    try:
+        price = float(message.text)
+    except ValueError:
+        await message.answer("❌ Введите корректное число.")
+        return
+
+    data = await state.get_data()
+    order_text = data["text"]
+
     db_session = Session()
     user = db_session.query(User).filter_by(telegram_id=message.from_user.id).first()
 
     if not user:
-        await message.answer("❌ Вы не зарегистрированы.")
+        await message.answer("❌ Вы не зарегистрированы. Напишите /start")
         await state.clear()
         return
 
     new_order = Order(
-        text=message.text,
+        text=order_text,
+        price=price,
         user_id=user.telegram_id
     )
     db_session.add(new_order)
@@ -40,7 +61,7 @@ async def process_order_text(message: Message, state: FSMContext):
 
     await message.bot.send_message(
         chat_id=CHANNEL_ID,
-        text=f"Новый заказ:\n\n{message.text}\n\nID: {new_order.id}",
+        text=f"Новый заказ:\n\n{order_text}\n\nЦена: {price} USDT\nID: {new_order.id}",
         reply_markup=keyboard
     )
 
@@ -48,7 +69,7 @@ async def process_order_text(message: Message, state: FSMContext):
     await state.clear()
 
 
-# ==== Кнопка "Откликнуться" ====
+# === Кнопка "Откликнуться" в канале ===
 @router.callback_query(lambda c: c.data.startswith("apply_"))
 async def apply_to_order(callback: CallbackQuery):
     try:
@@ -75,12 +96,15 @@ async def apply_to_order(callback: CallbackQuery):
 
     await callback.bot.send_message(
         chat_id=order.user.telegram_id,
-        text=f"Фрилансер @{freelancer.username} откликнулся на ваш заказ.",
+        text=f"Фрилансер @{freelancer.username} откликнулся на ваш заказ.\n"
+             f"Профиль: https://t.me/{freelancer.username}\n" 
+             f"Нажмите ниже, чтобы принять исполнителя.",
         reply_markup=keyboard
     )
     await callback.answer("Вы откликнулись!")
 
 
+# === Кнопка "Подтвердить фрилансера" ===
 @router.callback_query(lambda c: c.data.startswith("confirm_"))
 async def confirm_freelancer(callback: CallbackQuery):
     _, fid, oid = callback.data.split("_")
@@ -88,16 +112,16 @@ async def confirm_freelancer(callback: CallbackQuery):
     freelancer = db_session.query(User).filter_by(telegram_id=int(fid)).first()
     order = db_session.query(Order).get(int(oid))
 
-    if not freelancer:
-        await callback.answer("❌ Фрилансер не найден")
+    if not freelancer or not order:
+        await callback.answer("❌ Данные не найдены")
         return
 
     try:
         await callback.bot.send_message(
             chat_id=freelancer.telegram_id,
-            text=f"Заказчик @{callback.from_user.username} принял ваш отклик.\n"
+            text=f"Заказчик @{callback.from_user.username} принял вас!\n"
                  f"Текст заказа:\n{order.text}"
         )
-        await callback.message.edit_text("Информация отправлена исполнителю.")
+        await callback.message.edit_text("✅ Исполнитель уведомлен о принятии.")
     except Exception as e:
-        await callback.answer(f"Ошибка: {str(e)}")
+        await callback.answer(f"❌ Не удалось отправить сообщение: {str(e)}")

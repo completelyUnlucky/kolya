@@ -5,6 +5,7 @@ from datetime import datetime
 
 Base = declarative_base()
 
+
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
@@ -20,6 +21,7 @@ class Order(Base):
     __tablename__ = 'orders'
     id = Column(Integer, primary_key=True)
     text = Column(String)
+    price = Column(Float)
     status = Column(String, default='active')
     user_id = Column(Integer, ForeignKey('users.telegram_id'))
     user = relationship("User", back_populates="orders")

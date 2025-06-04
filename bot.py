@@ -13,6 +13,7 @@ dp.include_router(profile.router)
 dp.include_router(payment.router)
 dp.include_router(freelancer.router)
 
+
 async def main():
     print("Бот запущен...")
     await dp.start_polling(bot)
